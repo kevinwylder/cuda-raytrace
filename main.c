@@ -5,6 +5,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+typedef struct Image
+{
+    size_t width;
+    size_t height;
+    nvjpegImage_t data;
+} Image;
+
 void jpegAssert(nvjpegStatus_t status, const char *file, int line)
 {
     const char *name = NULL;
@@ -47,7 +54,7 @@ void cudaAssert(cudaError_t status, const char *file, int line)
         cudaAssert((call), __FILE__, __LINE__); \
     }
 
-void render_jpeg(char *dst)
+void writeImageJPEG(Image *img, const char *out)
 {
     nvjpegHandle_t handle;
     nvjpegEncoderState_t state;
@@ -60,18 +67,11 @@ void render_jpeg(char *dst)
     nvjpegCheck(nvjpegEncoderParamsCreate(handle, &params, stream));
     nvjpegCheck(nvjpegEncoderParamsSetSamplingFactors(params, NVJPEG_CSS_444, stream));
 
-    // allocate garbage
-    // TODO: render beautiful image
-    size_t width = 4096;
-    size_t height = 4096;
-    nvjpegImage_t image;
-    for (int channel = 0; channel < 3; channel++)
-    {
-        void **pointer = (void **)&image.channel[channel];
-        cudaCheck(cudaMallocPitch(pointer, &image.pitch[channel], width, height));
-    }
-
-    nvjpegCheck(nvjpegEncodeImage(handle, state, params, &image, NVJPEG_INPUT_RGB, width, height, stream));
+    nvjpegCheck(nvjpegEncodeImage(
+        handle, state, params,
+        &img->data, NVJPEG_INPUT_RGB,
+        img->width, img->height,
+        stream));
 
     size_t length;
     // get size of output image
@@ -87,12 +87,28 @@ void render_jpeg(char *dst)
 
     // copy buffer to file
     // TODO mmap + fallocate? check errors?
-    int fd = open(dst, O_CREAT | O_RDWR | O_TRUNC, 0666);
+    int fd = open(out, O_CREAT | O_RDWR | O_TRUNC, 0666);
     write(fd, jpegRaw, length);
 }
 
-int main()
+void allocateImage(Image *img, size_t width, size_t height)
 {
-    render_jpeg("out.jpg");
+    img->width = width;
+    img->height = height;
+    for (int channel = 0; channel < 3; channel++)
+    {
+        cudaCheck(cudaMallocPitch((void **)&img->data.channel[channel], &img->data.pitch[channel], width, height));
+    }
+}
+
+void renderImage(Image *img)
+{
+}
+
+main()
+{
+    Image img;
+    allocateImage(&img, 4096, 4096);
+    writeImageJPEG(&img, "out.jpg");
     return 0;
 }
