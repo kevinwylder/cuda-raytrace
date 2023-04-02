@@ -1,16 +1,11 @@
-#include <fcntl.h>
 #include <nvjpeg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
-typedef struct Image
-{
-    size_t width;
-    size_t height;
-    nvjpegImage_t data;
-} Image;
+#include <stdlib.h>
+#include <fcntl.h>
+#include "image.h"
 
 void jpegAssert(nvjpegStatus_t status, const char *file, int line)
 {
@@ -91,24 +86,13 @@ void writeImageJPEG(Image *img, const char *out)
     write(fd, jpegRaw, length);
 }
 
-void allocateImage(Image *img, size_t width, size_t height)
+void debugFace(Point *points, Pentagon *face)
 {
-    img->width = width;
-    img->height = height;
-    for (int channel = 0; channel < 3; channel++)
-    {
-        cudaCheck(cudaMallocPitch((void **)&img->data.channel[channel], &img->data.pitch[channel], width, height));
-    }
-}
-
-void renderImage(Image *img)
-{
-}
-
-main()
-{
-    Image img;
-    allocateImage(&img, 4096, 4096);
-    writeImageJPEG(&img, "out.jpg");
-    return 0;
+    printf(
+        "(%0.6f, %0.6f, %0.6f)\n(%0.6f, %0.6f, %0.6f)\n(%0.6f, %0.6f, %0.6f)\n(%0.6f, %0.6f, %0.6f)\n(%0.6f, %0.6f, %0.6f)\n",
+        points[face->a].x, points[face->a].y, points[face->a].z,
+        points[face->b].x, points[face->b].y, points[face->b].z,
+        points[face->c].x, points[face->c].y, points[face->c].z,
+        points[face->d].x, points[face->d].y, points[face->d].z,
+        points[face->e].x, points[face->e].y, points[face->e].z);
 }

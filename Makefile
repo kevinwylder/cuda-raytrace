@@ -1,6 +1,6 @@
 
-build: main.c
-	nvcc -g -O0 -G main.c -o build -lnvjpeg
+build: main.cu math.h util.c image.h
+	nvcc -g -O0 -G main.cu -o build -lnvjpeg
 
 run: build
 	./build
