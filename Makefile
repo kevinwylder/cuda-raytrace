@@ -1,5 +1,5 @@
 
-build: main.cu math.h util.c image.h
+build: main.cu scene.cu scene.h
 	nvcc -g -O0 -G main.cu -o build -lnvjpeg
 
 run: build
