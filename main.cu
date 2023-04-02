@@ -113,10 +113,11 @@ void renderImage(Scene *img)
 int main()
 {
     Scene img{
-        camera : {0., 0., 8.},
-        macro : .1,
+        camera : {0., 0., 12.},
+        macro : .2,
+        rotY : 1,
         width : 4096,
-        height : 4096
+        height : 4096,
     };
 
     // allocate image

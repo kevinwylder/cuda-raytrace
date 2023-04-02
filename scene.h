@@ -34,6 +34,9 @@ typedef struct Scene
 {
     Point camera;
     float macro;
+    float rotX;
+    float rotY;
+
     size_t width;
     size_t height;
     Point points[20];

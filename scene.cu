@@ -1,16 +1,11 @@
 #ifndef __SCENE_CU__
 #define __SCENE_CU__
+#include <math.h>
 #include "scene.h"
 
-__device__ void rotate(Matrix *matrix, float y, float x)
+__device__ float dot(Point *a, Point *b)
 {
-}
-
-__device__ void cross(Point *dst, Point *a, Point *b)
-{
-    dst->x = a->y * b->z - a->z * b->y;
-    dst->y = a->z * b->x - a->x * b->z;
-    dst->z = a->x * b->y - a->y * b->x;
+    return a->x * b->x + a->y * b->y + a->z * b->z;
 }
 
 __device__ void sub(Point *dst, Point *a, Point *b)
@@ -20,9 +15,44 @@ __device__ void sub(Point *dst, Point *a, Point *b)
     dst->z = a->z - b->z;
 }
 
-__device__ float dot(Point *a, Point *b)
+__device__ void cross(Point *dst, Point *a, Point *b)
 {
-    return a->x * b->x + a->y * b->y + a->z * b->z;
+    dst->x = a->y * b->z - a->z * b->y;
+    dst->y = a->z * b->x - a->x * b->z;
+    dst->z = a->x * b->y - a->y * b->x;
+}
+
+__host__ __device__ void linmap(Point *dst, Matrix *a, Point *x)
+{
+    dst->x = a->u.x * x->x + a->v.x * x->y + a->w.x * x->z;
+    dst->y = a->u.y * x->x + a->v.y * x->y + a->w.y * x->z;
+    dst->z = a->u.z * x->x + a->v.z * x->y + a->w.z * x->z;
+}
+
+__host__ __device__ void matmul(Matrix *dst, Matrix *a, Matrix *b)
+{
+    linmap(&dst->u, a, &b->u);
+    linmap(&dst->v, a, &b->v);
+    linmap(&dst->w, a, &b->w);
+}
+
+__host__ __device__ void rotateXY(Matrix *dst, float x, float y)
+{
+    float sinx = sin(x);
+    float cosx = cos(x);
+    Matrix leftwards = {
+        u : {cosx, 0, -sinx},
+        v : {0, 1, 0},
+        w : {sinx, 0, cosx},
+    };
+    float siny = sin(y);
+    float cosy = cos(y);
+    Matrix upwards = {
+        u : {1, 0, 0},
+        v : {0, cosy, siny},
+        w : {0, -siny, cosy},
+    };
+    matmul(dst, &leftwards, &upwards);
 }
 
 __device__ bool collides(Point *a, Point *b, Point *c, Ray *ray)
@@ -82,18 +112,29 @@ void initializeScene(Scene *img, size_t width, size_t height)
     img->faces[9] = {5, 18, 19, 7, 11};
     img->faces[10] = {6, 14, 15, 7, 19};
     img->faces[11] = {10, 6, 19, 18, 4};
+
+    // rotate all points based on scene rotation
+    Matrix rotation;
+    Point tmp;
+    rotateXY(&rotation, img->rotX, img->rotY);
+    for (size_t i = 0; i < 20; i++)
+    {
+        linmap(&tmp, &rotation, &img->points[i]);
+        img->points[i] = tmp;
+    }
 }
 
 __device__ void assignColor(Scene *img, size_t idx, float x, float y)
 {
     Ray ray = {
         location : img->camera,
-        direction : {
-            x : 0,
-            y : 0,
-            z : -1.,
-        }
     };
+
+    // find initial raycast direction based on x and y coordinate, macro, and camera position
+    Matrix rotation;
+    rotateXY(&rotation, x * img->macro, y * img->macro);
+    Point direction = {0, 0, -1};
+    linmap(&ray.direction, &rotation, &direction);
 
     img->data.channel[0][idx] = 0;
     img->data.channel[1][idx] = 0;
@@ -106,6 +147,7 @@ __device__ void assignColor(Scene *img, size_t idx, float x, float y)
         bool face1 = collides(&img->points[face.a], &img->points[face.b], &img->points[face.c], &ray); // || collides(&img->points[face.a], &img->points[face.c], &img->points[face.b], &ray);
         bool face2 = collides(&img->points[face.a], &img->points[face.c], &img->points[face.d], &ray); // || collides(&img->points[face.a], &img->points[face.d], &img->points[face.c], &ray);
         bool face3 = collides(&img->points[face.a], &img->points[face.d], &img->points[face.e], &ray); // || collides(&img->points[face.a], &img->points[face.e], &img->points[face.d], &ray);
+        // bool didCollide = face1 || face2 || face3;
         if (face1)
         {
             img->data.channel[0][idx] = 255;
