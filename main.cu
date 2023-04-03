@@ -115,7 +115,10 @@ int main()
     Scene img{
         camera : {0., 0., 12.},
         macro : .2,
-        rotY : 1,
+        rotX : .069,
+        rotY : .042,
+        band : 0.005,
+        reflections : 10,
         width : 4096,
         height : 4096,
     };

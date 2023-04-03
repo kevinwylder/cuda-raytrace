@@ -23,11 +23,8 @@ typedef struct Ray
 
 typedef struct Pentagon
 {
-    size_t a;
-    size_t b;
-    size_t c;
-    size_t d;
-    size_t e;
+    size_t verts[5];
+    Point norm;
 } Pentagon;
 
 typedef struct Scene
@@ -36,7 +33,9 @@ typedef struct Scene
     float macro;
     float rotX;
     float rotY;
+    float band;
 
+    size_t reflections;
     size_t width;
     size_t height;
     Point points[20];

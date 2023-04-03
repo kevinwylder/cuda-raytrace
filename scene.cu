@@ -3,19 +3,34 @@
 #include <math.h>
 #include "scene.h"
 
-__device__ float dot(Point *a, Point *b)
+__host__ __device__ float dot(Point *a, Point *b)
 {
     return a->x * b->x + a->y * b->y + a->z * b->z;
 }
 
-__device__ void sub(Point *dst, Point *a, Point *b)
+__host__ __device__ void normalize(Point *a)
+{
+    float len = sqrt(dot(a, a));
+    a->x /= len;
+    a->y /= len;
+    a->z /= len;
+}
+
+__device__ void scale(Point *dst, float scalar)
+{
+    dst->x *= scalar;
+    dst->y *= scalar;
+    dst->z *= scalar;
+}
+
+__host__ __device__ void sub(Point *dst, Point *a, Point *b)
 {
     dst->x = a->x - b->x;
     dst->y = a->y - b->y;
     dst->z = a->z - b->z;
 }
 
-__device__ void cross(Point *dst, Point *a, Point *b)
+__host__ __device__ void cross(Point *dst, Point *a, Point *b)
 {
     dst->x = a->y * b->z - a->z * b->y;
     dst->y = a->z * b->x - a->x * b->z;
@@ -55,7 +70,7 @@ __host__ __device__ void rotateXY(Matrix *dst, float x, float y)
     matmul(dst, &leftwards, &upwards);
 }
 
-__device__ bool collides(Point *a, Point *b, Point *c, Ray *ray)
+__device__ bool collides(Point *dst, Point *a, Point *b, Point *c, Ray *ray)
 {
     // https://stackoverflow.com/questions/42740765/intersection-between-line-and-triangle-in-3d
     Point e1, e2, n, ao, dao;
@@ -69,7 +84,13 @@ __device__ bool collides(Point *a, Point *b, Point *c, Ray *ray)
     float u = dot(&e2, &dao) * invdet;
     float v = -dot(&e1, &dao) * invdet;
     float t = dot(&ao, &n) * invdet;
-    return (det >= 1e-6 && t >= 0.0 && u >= 0.0 && v >= 0.0 && (u + v) <= 1.0);
+    dst->x = ray->location.x + ray->direction.x * t;
+    dst->y = ray->location.y + ray->direction.y * t;
+    dst->z = ray->location.z + ray->direction.z * t;
+    return (
+        det >= 1e-6 &&
+        t > 0.0 &&
+        u >= 0.0 && v >= 0.0 && (u + v) <= 1.0);
 }
 
 void initializeScene(Scene *img, size_t width, size_t height)
@@ -100,18 +121,18 @@ void initializeScene(Scene *img, size_t width, size_t height)
     img->points[18] = {0, phi_inv, -phi};
     img->points[19] = {0, -phi_inv, -phi};
 
-    img->faces[0] = {17, 16, 1, 9, 3};
-    img->faces[1] = {1, 16, 0, 12, 13};
-    img->faces[2] = {1, 13, 5, 11, 9};
-    img->faces[3] = {9, 11, 7, 15, 3};
-    img->faces[4] = {17, 3, 15, 14, 2};
-    img->faces[5] = {2, 8, 0, 16, 17};
-    img->faces[6] = {14, 6, 10, 8, 2};
-    img->faces[7] = {4, 12, 0, 8, 10};
-    img->faces[8] = {13, 12, 4, 18, 5};
-    img->faces[9] = {5, 18, 19, 7, 11};
-    img->faces[10] = {6, 14, 15, 7, 19};
-    img->faces[11] = {10, 6, 19, 18, 4};
+    img->faces[0] = {verts : {17, 16, 1, 9, 3}};
+    img->faces[1] = {verts : {1, 16, 0, 12, 13}};
+    img->faces[2] = {verts : {1, 13, 5, 11, 9}};
+    img->faces[3] = {verts : {9, 11, 7, 15, 3}};
+    img->faces[4] = {verts : {17, 3, 15, 14, 2}};
+    img->faces[5] = {verts : {2, 8, 0, 16, 17}};
+    img->faces[6] = {verts : {14, 6, 10, 8, 2}};
+    img->faces[7] = {verts : {4, 12, 0, 8, 10}};
+    img->faces[8] = {verts : {13, 12, 4, 18, 5}};
+    img->faces[9] = {verts : {5, 18, 19, 7, 11}};
+    img->faces[10] = {verts : {6, 14, 15, 7, 19}};
+    img->faces[11] = {verts : {10, 6, 19, 18, 4}};
 
     // rotate all points based on scene rotation
     Matrix rotation;
@@ -122,6 +143,60 @@ void initializeScene(Scene *img, size_t width, size_t height)
         linmap(&tmp, &rotation, &img->points[i]);
         img->points[i] = tmp;
     }
+
+    // compute surface normals
+    for (size_t i = 0; i < 12; i++)
+    {
+        Pentagon *face = &img->faces[i];
+        Point e1, e2;
+        sub(&e1, &img->points[face->verts[1]], &img->points[face->verts[0]]);
+        sub(&e2, &img->points[face->verts[3]], &img->points[face->verts[0]]);
+        cross(&face->norm, &e1, &e2);
+        normalize(&face->norm);
+    }
+}
+
+__device__ bool castRay(Scene *img, size_t idx, Ray *ray, size_t dull)
+{
+    for (size_t i = 0; i < 12; i++)
+    {
+        // check if we collide with a face
+        Pentagon face = img->faces[i];
+        size_t *verts = &face.verts[0];
+        Point collidePoint, collidePointRelative, edge;
+        if (
+            !collides(&collidePoint, &img->points[verts[0]], &img->points[verts[1]], &img->points[verts[2]], ray) &&
+            !collides(&collidePoint, &img->points[verts[0]], &img->points[verts[2]], &img->points[verts[3]], ray) &&
+            !collides(&collidePoint, &img->points[verts[0]], &img->points[verts[3]], &img->points[verts[4]], ray))
+        {
+            continue;
+        }
+
+        // check if it hit near an edge
+        for (size_t i = 0; i < 5; i++)
+        {
+            sub(&collidePointRelative, &collidePoint, &img->points[verts[i]]);
+            sub(&edge, &img->points[verts[(i + 1) % 5]], &img->points[verts[i]]);
+            normalize(&edge);
+            scale(&edge, dot(&edge, &collidePointRelative));
+            sub(&collidePointRelative, &collidePointRelative, &edge);
+            if (dot(&collidePointRelative, &collidePointRelative) < img->band)
+            {
+                img->data.channel[0][idx] = 255 - dull;
+                img->data.channel[1][idx] = 255 - dull;
+                img->data.channel[2][idx] = 255 - dull;
+                return false;
+            }
+        }
+        // update ray to reflect off surface
+        ray->location = collidePoint;
+        Point reflected = face.norm;
+        scale(&reflected, 2 * dot(&reflected, &ray->direction));
+        sub(&ray->direction, &ray->direction, &reflected);
+        normalize(&ray->direction);
+        return true;
+    }
+    return false;
 }
 
 __device__ void assignColor(Scene *img, size_t idx, float x, float y)
@@ -139,26 +214,11 @@ __device__ void assignColor(Scene *img, size_t idx, float x, float y)
     img->data.channel[0][idx] = 0;
     img->data.channel[1][idx] = 0;
     img->data.channel[2][idx] = 0;
-
-    for (size_t i = 0; i < 12; i++)
+    for (size_t i = 0; i < img->reflections; i++)
     {
-        // check if we collide with a face
-        Pentagon face = img->faces[i];
-        bool face1 = collides(&img->points[face.a], &img->points[face.b], &img->points[face.c], &ray); // || collides(&img->points[face.a], &img->points[face.c], &img->points[face.b], &ray);
-        bool face2 = collides(&img->points[face.a], &img->points[face.c], &img->points[face.d], &ray); // || collides(&img->points[face.a], &img->points[face.d], &img->points[face.c], &ray);
-        bool face3 = collides(&img->points[face.a], &img->points[face.d], &img->points[face.e], &ray); // || collides(&img->points[face.a], &img->points[face.e], &img->points[face.d], &ray);
-        // bool didCollide = face1 || face2 || face3;
-        if (face1)
+        if (!castRay(img, idx, &ray, 25 * i))
         {
-            img->data.channel[0][idx] = 255;
-        }
-        if (face2)
-        {
-            img->data.channel[1][idx] = 255;
-        }
-        if (face3)
-        {
-            img->data.channel[2][idx] = 255;
+            break;
         }
     }
 }
