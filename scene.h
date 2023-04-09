@@ -35,6 +35,7 @@ typedef struct Scene
     float rotY;
     float band;
 
+    float reflectivity;
     size_t reflections;
     size_t width;
     size_t height;

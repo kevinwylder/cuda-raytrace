@@ -113,12 +113,13 @@ void renderImage(Scene *img)
 int main()
 {
     Scene img{
-        camera : {0., 0., 12.},
-        macro : .2,
-        rotX : .069,
-        rotY : .042,
-        band : 0.005,
-        reflections : 10,
+        camera : {0., 0., 6.},
+        macro : .4,
+        rotX : .049,
+        rotY : .102,
+        band : 0.004,
+        reflectivity : .87,
+        reflections : 30,
         width : 4096,
         height : 4096,
     };

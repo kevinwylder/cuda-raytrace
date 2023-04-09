@@ -89,7 +89,7 @@ __device__ bool collides(Point *dst, Point *a, Point *b, Point *c, Ray *ray)
     dst->z = ray->location.z + ray->direction.z * t;
     return (
         det >= 1e-6 &&
-        t > 0.0 &&
+        // t > 0.0 &&
         u >= 0.0 && v >= 0.0 && (u + v) <= 1.0);
 }
 
@@ -156,7 +156,7 @@ void initializeScene(Scene *img, size_t width, size_t height)
     }
 }
 
-__device__ bool castRay(Scene *img, size_t idx, Ray *ray, size_t dull)
+__device__ bool castRay(Scene *img, size_t idx, Ray *ray, size_t intensity)
 {
     for (size_t i = 0; i < 12; i++)
     {
@@ -182,9 +182,9 @@ __device__ bool castRay(Scene *img, size_t idx, Ray *ray, size_t dull)
             sub(&collidePointRelative, &collidePointRelative, &edge);
             if (dot(&collidePointRelative, &collidePointRelative) < img->band)
             {
-                img->data.channel[0][idx] = 255 - dull;
-                img->data.channel[1][idx] = 255 - dull;
-                img->data.channel[2][idx] = 255 - dull;
+                img->data.channel[0][idx] = intensity;
+                img->data.channel[1][idx] = intensity;
+                img->data.channel[2][idx] = intensity;
                 return false;
             }
         }
@@ -208,18 +208,35 @@ __device__ void assignColor(Scene *img, size_t idx, float x, float y)
     // find initial raycast direction based on x and y coordinate, macro, and camera position
     Matrix rotation;
     rotateXY(&rotation, x * img->macro, y * img->macro);
-    Point direction = {0, 0, -1};
-    linmap(&ray.direction, &rotation, &direction);
 
+    img->data.channel[0][idx] = 48;
+    img->data.channel[1][idx] = 48;
+    img->data.channel[2][idx] = 48;
+
+    // first raycast is not reflective! cast in reverse
+    Point direction = {0, 0, 1};
+    linmap(&ray.direction, &rotation, &direction);
+    if (!castRay(img, idx, &ray, 0))
+    {
+        return;
+    }
+
+    // we hit a mirror, now cast forward in a loop
     img->data.channel[0][idx] = 0;
     img->data.channel[1][idx] = 0;
     img->data.channel[2][idx] = 0;
+
+    direction = {0, 0, -1};
+    linmap(&ray.direction, &rotation, &direction);
+
+    float intensity = 255.;
     for (size_t i = 0; i < img->reflections; i++)
     {
-        if (!castRay(img, idx, &ray, 25 * i))
+        if (!castRay(img, idx, &ray, size_t(intensity)))
         {
             break;
         }
+        intensity *= img->reflectivity;
     }
 }
 
